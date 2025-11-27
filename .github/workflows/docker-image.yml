@@ -1,0 +1,73 @@
+name: Docker
+
+on:
+  push:
+    branches: [ "devops" ]
+    # Publish semver tags as releases.
+    
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: "${{ github.repository }}/cybrid-txn"
+
+jobs:
+  checkout:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+  
+  build:
+    runs-on: ubuntu-latest
+    needs: checkout
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.TOKEN }}
+
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT  
+
+      - id: meta
+        run: |
+          echo "tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.commit.outputs.sha }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_OUTPUT
+          echo "labels=commit=${{ steps.commit.outputs.sha }}" >> $GITHUB_OUTPUT
+      
+      - name: Debug tags and labels
+        run: |
+          echo "Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Labels: ${{ steps.meta.outputs.labels }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run build
+      - name: Build project
+        run: npm run build
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+      
+      - name: Sign the published Docker image
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: |
+          echo $TAGS
+          echo $TAGS  >> $GITHUB_STEP_SUMMARY
