@@ -3,7 +3,9 @@ FROM node:18 as builder
 WORKDIR /build
 
 COPY package*.json ./
+RUN apt-get update && apt-get install -y curl
 RUN npm install
+
 
 COPY src/ ./src
 COPY tsconfig.json ./
